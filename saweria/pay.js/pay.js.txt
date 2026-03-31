@@ -1,0 +1,58 @@
+const axios = require('axios');
+
+export default async function handler(req, res) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+
+    const { username, amount, msg } = req.body;
+
+    if (!username || !amount) {
+        return res.status(400).json({ error: 'Missing parameters' });
+    }
+
+    try {
+        // Step 1: Ambil Cookies/Session (Warm-up)
+        const session = await axios.get(`https://saweria.co/${username}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+
+        const cookies = session.headers['set-cookie'];
+
+        // Step 2: Request QRIS ke Backend
+        const response = await axios.post(
+            `https://backend.saweria.co/donations/${username}`,
+            {
+                agree: true,
+                amount: parseInt(amount),
+                customer_info: { first_name: 'Store-User', email: 'user@gmail.com' },
+                message: msg || 'Deposit',
+                payment_type: 'qris'
+            },
+            {
+                headers: {
+                    'Cookie': cookies ? cookies.join('; ') : '',
+                    'Origin': 'https://saweria.co',
+                    'Referer': `https://saweria.co/${username}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            }
+        );
+
+        if (response.data && response.data.data && response.data.data.qr_string) {
+            return res.status(200).json({ 
+                qr_string: response.data.data.qr_string 
+            });
+        } else {
+            return res.status(500).json({ error: 'Gagal mendapatkan QR String dari Saweria' });
+        }
+
+    } catch (error) {
+        return res.status(500).json({ 
+            error: 'Bypass Failed', 
+            details: error.response ? error.response.status : error.message 
+        });
+    }
+}
